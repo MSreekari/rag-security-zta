@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@font-face{
+  font-family: SansFlex; 
+  src : url(../src/assets/fonts/GoogleSansFlex-VariableFont_GRAD\,ROND\,opsz\,slnt\,wdth\,wght.ttf); 
+}
+@font-face{
+  font-family: Coolvetica; 
+  src : url(../src/assets/fonts/Coolvetica\ Rg.otf); 
+}
+@font-face{
+  font-family: Boldfont; 
+  src : url(../src/assets/fonts/THEBOLDFONT-FREEVERSION.otf); 
+}
+
+@theme{
+  --font-sansflex : SansFlex, "sans-serif"; 
+  --font-coolvetica : Coolvetica, "sans-serif"; 
+  --font-boldfont : Boldfont, "sans-serif";
+}
+
+body {
+  margin: 0;
+  background-color: #0D0D0D;
+}
+
+#root {
+  /* Remove the padding here! */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}

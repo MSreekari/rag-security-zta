@@ -1,0 +1,4 @@
+Engineering Infrastructure & Internal Network:
+Backend microservices communicate over internal gRPC channels with mutual TLS (mTLS) enforcement on port 8443.
+The primary Redis cluster for session cache is accessible via internal VPC subnet 10.0.4.0/24 with authentication required.
+CI/CD deployment pipelines use ephemeral runner instances with rotated AWS IAM session credentials.
