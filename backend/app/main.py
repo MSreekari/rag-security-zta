@@ -7,6 +7,7 @@ from app.models.token_models import UserContext
 from app.models.rag_models import QueryRequest, QueryResponse
 from app.services.rag_service import rag_service
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.endpoints import audit
 
 # 1. Initialize FastAPI Instance
 app = FastAPI(
@@ -60,6 +61,9 @@ def execute_secure_rag(
 ):
     """Zero-Trust RAG Pipeline Entrypoint"""
     return rag_service.process_query(query=request.query, context=context)
+
+app.include_router(audit.router, prefix="/api/v1")
+
 
 app.add_middleware(
     CORSMiddleware,

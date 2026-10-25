@@ -1,5 +1,7 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import List, Optional
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=3, example="What are the backend mTLS ports?")
@@ -17,5 +19,7 @@ class QueryResponse(BaseModel):
     clearance: int
     authorized_chunks_used: int
     answer: str
-    sanitized: bool = False
+    sanitized: bool
     audit_event_id: str
+    risk_score: int = 0
+    quarantine_status: bool = False

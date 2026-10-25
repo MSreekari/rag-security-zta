@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -13,15 +13,15 @@ import {
   Loader2,
   Lock,
   Activity,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 export const ChatPage = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  
-  // State for user attributes (fallback to localStorage if context reloads)
-  const [currentUser, setCurrentUser] = useState({
+
+  const [currentUser] = useState({
     user_id: user?.user_id || localStorage.getItem('user_id') || 'Unknown',
     department: user?.department || localStorage.getItem('department') || 'general',
     clearance: user?.clearance || Number(localStorage.getItem('clearance')) || 1,
@@ -30,6 +30,9 @@ export const ChatPage = () => {
 
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [currentRisk, setCurrentRisk] = useState(0);
+  const [isQuarantined, setIsQuarantined] = useState(false);
+
   const [messages, setMessages] = useState([
     {
       id: 'welcome-msg',
@@ -41,27 +44,23 @@ export const ChatPage = () => {
 
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom of chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Handle Logout
   const handleLogout = () => {
     if (logout) logout();
     localStorage.clear();
     navigate('/');
   };
 
-  // Submit query to Zero Trust RAG endpoint
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputQuery.trim() || isLoading) return;
+    if (!inputQuery.trim() || isLoading || isQuarantined) return;
 
     const queryText = inputQuery.trim();
     setInputQuery('');
 
-    // Add user message to state
     const userMsg = {
       id: String(Date.now()),
       sender: 'user',
@@ -82,12 +81,19 @@ export const ChatPage = () => {
 
       const data = await response.json();
 
+      // Synchronize risk telemetry
+      if (typeof data.risk_score === 'number') {
+        setCurrentRisk(data.risk_score);
+      }
+      if (data.quarantine_status || data.risk_score >= 3) {
+        setIsQuarantined(true);
+      }
+
       if (!response.ok) {
-        // Handle PEP Authorization Failures (401/403)
-        const errorMessage = typeof data.detail === 'string' 
-          ? data.detail 
+        const errorMessage = typeof data.detail === 'string'
+          ? data.detail
           : 'Zero Trust PEP Authorization Failure';
-          
+
         setMessages((prev) => [
           ...prev,
           {
@@ -101,10 +107,10 @@ export const ChatPage = () => {
         return;
       }
 
-      // Check if response was blocked by Input Guardrail
-      const isGuardrailBlocked = data.authorized_chunks_used === 0 && data.answer.includes('Zero Trust Violation');
+      const isGuardrailBlocked =
+        data.authorized_chunks_used === 0 &&
+        (data.answer.includes('Zero Trust Violation') || data.answer.includes('Quarantined'));
 
-      // Add AI response
       setMessages((prev) => [
         ...prev,
         {
@@ -118,10 +124,11 @@ export const ChatPage = () => {
             auditEventId: data.audit_event_id,
             clearance: data.clearance,
             department: data.department,
+            riskScore: data.risk_score,
           },
         },
       ]);
-    } catch (err) {
+    } catch {
       setMessages((prev) => [
         ...prev,
         {
@@ -139,11 +146,9 @@ export const ChatPage = () => {
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans antialiased overflow-hidden">
-      
-      {/* Left Sidebar: Active Zero-Trust Persona Telemetry */}
+      {/* Left Sidebar */}
       <aside className="w-80 border-r border-zinc-800/80 bg-zinc-900/40 p-5 flex flex-col justify-between hidden md:flex">
         <div className="space-y-6">
-          
           {/* Brand */}
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-[#814AC8]/20 border border-[#814AC8]/30">
@@ -182,21 +187,42 @@ export const ChatPage = () => {
             </div>
           </div>
 
-          {/* Policy Information */}
-          <div className="space-y-2 text-xs text-zinc-400">
-            <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Enforcement Rules</p>
-            <div className="space-y-1.5 text-[11px] bg-zinc-900/60 p-3 rounded-xl border border-zinc-800">
-              <div className="flex items-center gap-1.5 text-zinc-400">
-                <Lock size={12} className="text-[#814AC8]" /> Pre-Retrieval Vector ACL Filtering
-              </div>
-              <div className="flex items-center gap-1.5 text-zinc-400">
-                <ShieldAlert size={12} className="text-[#814AC8]" /> Input Prompt Injection Firewall
-              </div>
-              <div className="flex items-center gap-1.5 text-zinc-400">
-                <AlertTriangle size={12} className="text-[#814AC8]" /> Real-time DLP Output Sanitizer
-              </div>
+          {/* Real-time Risk Score Telemetry Widget */}
+          <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400 font-medium">Session Threat Score:</span>
+              <span
+                className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] border ${
+                  currentRisk >= 3
+                    ? 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse'
+                    : currentRisk >= 1
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                }`}
+              >
+                {currentRisk} / 3.0
+              </span>
             </div>
+
+            {/* Visual Risk Bar */}
+            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  currentRisk >= 3 ? 'bg-red-500' : currentRisk >= 1 ? 'bg-amber-500' : 'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min((currentRisk / 3) * 100, 100)}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-zinc-500">Threshold &ge; 3.0 triggers automatic quarantine lockout.</p>
           </div>
+
+          {/* Navigation to Full Security Dashboard */}
+          <Link
+            to="/dashboard"
+            className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-[#814AC8]/15 hover:bg-[#814AC8]/25 text-[#c29bf7] text-xs font-semibold border border-[#814AC8]/30 transition"
+          >
+            <BarChart3 size={15} /> Open Security Dashboard
+          </Link>
         </div>
 
         {/* Logout Action */}
@@ -210,19 +236,43 @@ export const ChatPage = () => {
 
       {/* Main Chat Workspace */}
       <main className="flex-1 flex flex-col h-full bg-zinc-950">
-        
-        {/* Top Mobile Bar */}
+        {/* Top Bar */}
         <header className="h-14 border-b border-zinc-800/80 px-6 flex items-center justify-between bg-zinc-900/30">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h1 className="text-xs font-medium text-zinc-300">Policy Enforcement Active</h1>
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                isQuarantined ? 'bg-red-500 animate-ping' : 'bg-emerald-500 animate-pulse'
+              }`}
+            />
+            <h1 className="text-xs font-medium text-zinc-300">
+              {isQuarantined ? 'Session Quarantined by Risk Engine' : 'Policy Enforcement Point Active'}
+            </h1>
           </div>
-          <div className="flex items-center gap-2 md:hidden">
-            <button onClick={handleLogout} className="text-xs text-zinc-400 hover:text-white">
+          <div className="flex items-center gap-3">
+            <Link to="/dashboard" className="text-xs text-[#a874ea] hover:text-[#c29bf7] md:hidden">
+              Dashboard
+            </Link>
+            <button onClick={handleLogout} className="text-xs text-zinc-400 hover:text-white md:hidden">
               Logout
             </button>
           </div>
         </header>
+
+        {/* Quarantine Alert Banner */}
+        {isQuarantined && (
+          <div className="m-4 p-4 border border-red-500/50 bg-red-950/40 rounded-2xl flex items-start gap-3 text-red-200">
+            <ShieldAlert size={20} className="text-red-400 shrink-0 mt-0.5 animate-bounce" />
+            <div className="space-y-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-red-300">
+                CRITICAL ALERT: SESSION SUSPENDED BY ADAPTIVE RISK ENGINE
+              </p>
+              <p className="text-xs text-red-400/90 leading-relaxed">
+                Your accumulated anomaly score reached <span className="font-mono font-bold">{currentRisk}</span> (limit: 3.0). 
+                Execution permissions are revoked. Switch persona or review incidents in the Security Dashboard.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Message Feed */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
@@ -233,7 +283,6 @@ export const ChatPage = () => {
                 msg.sender === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'
               }`}
             >
-              {/* Avatar */}
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs ${
                   msg.sender === 'user'
@@ -248,7 +297,6 @@ export const ChatPage = () => {
                 {msg.sender === 'user' ? <User size={16} /> : msg.sender === 'system' ? <Lock size={14} /> : <Bot size={16} />}
               </div>
 
-              {/* Message Content */}
               <div className="space-y-1.5 max-w-[85%]">
                 <div
                   className={`p-4 rounded-2xl text-sm leading-relaxed ${
@@ -266,7 +314,6 @@ export const ChatPage = () => {
                   <p className="whitespace-pre-wrap">{msg.text}</p>
                 </div>
 
-                {/* Response Telemetry Badges (Only on Bot replies) */}
                 {msg.metadata && (
                   <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] text-zinc-500 font-mono">
                     <span className="flex items-center gap-1 bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-700">
@@ -277,16 +324,17 @@ export const ChatPage = () => {
                         <AlertTriangle size={10} /> DLP Redacted
                       </span>
                     )}
-                    <span className="flex items-center gap-1 bg-zinc-800/40 px-2 py-0.5 rounded border border-zinc-800 text-zinc-500">
-                      <FileText size={10} /> SIEM: {msg.metadata.auditEventId.slice(0, 8)}...
-                    </span>
+                    {msg.metadata.auditEventId && (
+                      <span className="flex items-center gap-1 bg-zinc-800/40 px-2 py-0.5 rounded border border-zinc-800 text-zinc-500">
+                        <FileText size={10} /> SIEM: {msg.metadata.auditEventId.slice(0, 8)}...
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           ))}
 
-          {/* Loading Indicator */}
           {isLoading && (
             <div className="flex gap-3 max-w-3xl mr-auto">
               <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
@@ -305,22 +353,26 @@ export const ChatPage = () => {
           <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto relative flex items-center">
             <input
               type="text"
-              placeholder={`Ask as ${currentUser.user_id} (Clearance Lvl ${currentUser.clearance})...`}
+              placeholder={
+                isQuarantined
+                  ? 'Session Quarantined. Access locked due to security policy violations.'
+                  : `Ask as ${currentUser.user_id} (Clearance Lvl ${currentUser.clearance})...`
+              }
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              disabled={isLoading}
-              className="w-full bg-zinc-800/70 border border-zinc-700/80 rounded-2xl py-3.5 pl-4 pr-12 text-sm text-white placeholder:text-zinc-500 outline-none focus:border-[#814AC8] focus:ring-1 focus:ring-[#814AC8] transition-all disabled:opacity-50"
+              disabled={isLoading || isQuarantined}
+              className="w-full bg-zinc-800/70 border border-zinc-700/80 rounded-2xl py-3.5 pl-4 pr-12 text-sm text-white placeholder:text-zinc-500 outline-none focus:border-[#814AC8] focus:ring-1 focus:ring-[#814AC8] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              disabled={!inputQuery.trim() || isLoading}
+              disabled={!inputQuery.trim() || isLoading || isQuarantined}
               className="absolute right-2 p-2 rounded-xl bg-[#814AC8] hover:bg-[#9254df] text-white disabled:opacity-30 disabled:hover:bg-[#814AC8] transition cursor-pointer"
             >
               <Send size={16} />
             </button>
           </form>
           <p className="text-center text-[10px] text-zinc-600 mt-2">
-            Inputs inspected by heuristic firewall. Unauthorized chunks are dynamically filtered by the PDP.
+            Inputs inspected by heuristic firewall. Risk threshold set to 3.0.
           </p>
         </div>
       </main>

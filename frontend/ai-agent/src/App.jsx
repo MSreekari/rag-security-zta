@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import ChatPage from './pages/ChatPage';
+import  Dashboard from './pages/Dashboard';
+
 
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
@@ -31,6 +33,8 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route path="/dashboard" element={<Dashboard />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
